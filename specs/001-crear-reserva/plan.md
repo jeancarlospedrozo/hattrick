@@ -70,7 +70,7 @@ picos de decenas de solicitudes por segundo (research R12); SC-001: reservar en 
 | **III. Test-first** | Cada criterio de aceptación tiene un test previsto (tabla siguiente). Las reglas se prueban en `dominio/` sin HTTP ni base de datos. En las tareas, los tests van antes de la implementación. | ✅ |
 | **IV. Contratos primero** | [contracts/openapi.yaml](./contracts/openapi.yaml) se define antes de implementar. `openapi-typescript` genera `packages/contracts`, que usan el frontend y el backend. Los tests de contrato validan las respuestas con `ajv`. | ✅ |
 | **V. Simplicidad** | Un solo backend con los módulos `reservas`, `catalogo` y `auth`. No hay un proceso programado. Cada dependencia está justificada en la tabla de dependencias. | ✅ |
-| **VI. Seguridad y datos personales** | `POST /reservas` y `GET /reservas/{id}` exigen JWT. Las reservas solo guardan el `jugador_id`. La disponibilidad no expone datos de jugadores. El consentimiento se obtiene en el registro, que es otra feature. | ✅ |
+| **VI. Seguridad y datos personales** | `POST /reservas` y `GET /reservas/{id}` exigen JWT. Las reservas solo guardan el `jugador_id`. La disponibilidad no expone datos de jugadores. El consentimiento se obtiene en el registro, que es otra feature. El endpoint de test `POST /api/test/reloj` solo existe con `RELOJ_AJUSTABLE=1` y también exige JWT. | ✅ |
 
 **Resultado**: pasa sin excepciones. La revisión después del diseño (Phase 1) no cambió nada: el
 modelo de datos y el contrato mantienen las 6 puertas.
@@ -111,8 +111,12 @@ modelo de datos y el contrato mantienen las 6 puertas.
 | `openapi-typescript` (dev) | packages/contracts | Genera los tipos a partir del contrato (Principio IV, R8). |
 | `supertest`, `ajv`, `ajv-formats`, `yaml` (dev) | backend | Tests de contrato: llaman a la API y validan las respuestas contra el OpenAPI (R8). |
 | `@playwright/test` (dev) | e2e | Tests de extremo a extremo; ya está en el stack aprobado. |
+| `tsx` (dev) | backend | Ejecuta los scripts TypeScript (`migrate.ts`, `seed.ts`, `token-dev.ts`, `carga.ts`) sin un paso de compilación. |
+| `ts-jest` (dev) | backend, frontend | Permite que Jest ejecute TypeScript estricto; es la integración estándar de Jest (stack aprobado). |
+| `eslint`, `typescript-eslint`, `prettier` (dev) | raíz | Lint estricto y formato. La regla `no-restricted-imports` impide que el dominio importe NestJS o `pg` (Principio III). |
 
-Las dependencias propias de NestJS, Next.js, React, Jest y TypeScript vienen del stack aprobado.
+Las dependencias propias de NestJS (`reflect-metadata` y `rxjs`, que NestJS necesita para funcionar), de
+Next.js, React, Jest y TypeScript (incluidos los `@types/*`) vienen del stack aprobado.
 
 ## Project Structure
 
@@ -217,6 +221,9 @@ nuevo.
 7. `INSERT` con `valor_cop` y `expira_en = ahora + 10 min`. Si da `23P01` → `ROLLBACK` y 409
    "Esta franja ya no está disponible".
 8. `COMMIT` → 201.
+
+Si la transacción falla con `40P01` (interbloqueo), se reintenta completa una sola vez. Si vuelve a
+fallar → 409. El paso 5 bloquea las filas vencidas en orden de `id` para que el interbloqueo sea raro.
 
 ## Complexity Tracking
 

@@ -52,7 +52,10 @@ plan.md (monorepo: `backend/`, `frontend/`, `packages/contracts/`, `contracts/`,
 - [ ] T005 Configurar Jest en el backend con tres proyectos en `backend/jest.config.ts`: `unit` (`test/unit/**`), `integration` (`test/integration/**`, `maxWorkers: 1`) y `contract` (`test/contract/**`, `maxWorkers: 1`). Añadir a `backend/package.json` los scripts `test:unit`, `test:integration`, `test:contract`, `db:migrate`, `db:seed` y `token:dev`
 - [ ] T006 [P] Crear el frontend Next.js 15 (App Router, React 19) en `frontend/`, con `package.json` (scripts `dev -p 3000`, `build`, `test` con Jest y `ts-jest`) y `tsconfig.json` que extiende la base. Sin librerías de UI adicionales
 - [ ] T007 [P] Crear `contracts/openapi.yaml` copiando [specs/001-crear-reserva/contracts/openapi.yaml](./contracts/openapi.yaml) sin cambios. Crear el workspace `packages/contracts/` (`package.json` con `name: "@reservas/contracts"` y la dependencia de desarrollo `openapi-typescript`; script `generate`: `openapi-typescript ../../contracts/openapi.yaml -o src/schema.ts`; `src/index.ts` reexporta `paths` y `components` y define alias como `Reserva = components["schemas"]["Reserva"]`). Generar `packages/contracts/src/schema.ts` por primera vez
-- [ ] T008 [P] Crear el workspace `e2e/` con `@playwright/test`, un `playwright.config.ts` (chromium; `webServer` levanta backend y frontend con `RELOJ_AJUSTABLE=1` y `DATABASE_URL=$DATABASE_URL_TEST`; `baseURL: http://localhost:3000`) y `e2e/package.json`
+- [ ] T008 [P] Crear el workspace `e2e/` con `@playwright/test`, un `playwright.config.ts` (chromium; `webServer` levanta backend y frontend con `RELOJ_AJUSTABLE=1` y `DATABASE_URL=$DATABASE_URL_TEST`; `baseURL: http://localhost:3000`) y `e2e/package.json`. Además:
+  - `e2e/global-setup.ts` migra y siembra la base de test `DATABASE_URL_TEST` y vacía la tabla `reservas`.
+  - `e2e/helpers.ts` tiene `tokenPara(uuid)`, que firma un JWT HS256 con `AUTH_JWT_SECRET` usando `node:crypto` (sin dependencias nuevas), y `fijarReloj(request, iso)`, que llama a `POST /api/test/reloj` con un token.
+  - Cada test fija en `beforeEach` el reloj en `2026-11-10T12:00:00-05:00` y usa el sábado `2026-11-14`.
 - [ ] T009 [P] Configurar ESLint (flat config con `typescript-eslint` en modo strict) y Prettier en `eslint.config.mjs` y `.prettierrc` en la raíz. Añadir una regla `no-restricted-imports` que impida importar `@nestjs/*`, `pg` y `luxon` fuera de `franja.ts` dentro de `backend/src/reservas/dominio/**`
 
 ---
@@ -90,7 +93,7 @@ utilidades de test que necesitan todas las historias
   - Índice `reservas_pendientes_jugador ON reservas (jugador_id) WHERE estado = 'pendiente_pago'`.
 - [ ] T013 Implementar `backend/src/db/pool.ts` (un `Pool` de `pg` creado desde `DATABASE_URL`, y el helper `enTransaccion<T>(fn: (cliente) => Promise<T>)` que hace BEGIN/COMMIT/ROLLBACK y libera el cliente) y `backend/src/db/migrate.ts` (crea `schema_migrations(nombre text PK, aplicada_en timestamptz)` y aplica los `.sql` de `migrations/` pendientes, en orden alfabético y cada uno en una transacción). Script `db:migrate` = `tsx src/db/migrate.ts`
 - [ ] T014 [P] Implementar `backend/src/db/seed.ts`, que sea idempotente con `ON CONFLICT DO NOTHING` e ids fijos: la sede "Sede Norte" (`apertura 06:00`, `cierre 23:00`, `America/Bogota`) y las canchas `C1` y `C2` (`tarifa_por_hora_cop = 80000`). Debe imprimir los ids. Script `db:seed`
-- [ ] T015 [P] Implementar `backend/src/compartido/reloj.ts`: la interfaz `Reloj { ahora(): Date }`, el token de inyección `RELOJ`, `RelojSistema`, y `RelojAjustable` con `fijar(d: Date)` y `avanzar(ms: number)`. Además, `backend/src/compartido/reloj.module.ts`, que provee `RelojAjustable` si `RELOJ_AJUSTABLE=1` y `RelojSistema` en caso contrario. Con `RELOJ_AJUSTABLE=1` se expone `POST /api/test/reloj` (body `{ fijar?: string, avanzarMs?: number }`), registrado **solo** en ese caso, protegido con `JwtGuard` (Principio VI: ningún endpoint de escritura sin autenticación) y usado únicamente por los tests e2e
+- [ ] T015 Implementar (depende de T019 por el `JwtGuard`) `backend/src/compartido/reloj.ts`: la interfaz `Reloj { ahora(): Date }`, el token de inyección `RELOJ`, `RelojSistema`, y `RelojAjustable` con `fijar(d: Date)` y `avanzar(ms: number)`. Además, `backend/src/compartido/reloj.module.ts`, que provee `RelojAjustable` si `RELOJ_AJUSTABLE=1` y `RelojSistema` en caso contrario. Con `RELOJ_AJUSTABLE=1` se expone `POST /api/test/reloj` (body `{ fijar?: string, avanzarMs?: number }`), registrado **solo** en ese caso, protegido con `JwtGuard` (Principio VI: ningún endpoint de escritura sin autenticación) y usado únicamente por los tests e2e
 - [ ] T016 [P] Implementar `backend/src/reservas/dominio/errores.ts`: la clase base `ErrorDominio { codigo; mensaje }` y las subclases con sus mensajes en español:
   - `SolicitudInvalida`
   - `CanchaNoEncontrada` ("Cancha no encontrada")
@@ -119,7 +122,7 @@ utilidades de test que necesitan todas las historias
   - `app.ts`: `crearAppDeTest()` arma el `AppModule` con `RELOJ` sobrescrito por un `RelojAjustable` y devuelve `{ app, reloj, http: supertest(app.getHttpServer()) }`.
   - `tokens.ts`: `tokenPara(jugadorId)`.
   - `contrato.ts`: carga `contracts/openapi.yaml` con `yaml`, compila los esquemas con `ajv` y `ajv-formats`, y expone `esperarConformeAlContrato(res, operationId)`, que valida el cuerpo contra el esquema de la respuesta según el código de estado.
-- [ ] T022 Implementar el cliente base del frontend en `frontend/src/lib/api.ts`: `fetch` tipado con `paths` de `@reservas/contracts`, la URL base `NEXT_PUBLIC_API_URL`, un token leído de `localStorage['token']` que se envía como Bearer, y resultados del tipo `{ ok: true, status, data } | { ok: false, status, error: { codigo, mensaje } }`. Además, `frontend/src/lib/formato.ts`, con `horaLocal(iso)` → `"19:00"` y `pesos(valorCop)` → `"$ 80.000"` usando `Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })`
+- [ ] T022 Implementar el cliente base del frontend en `frontend/src/lib/api.ts`: `fetch` tipado con `paths` de `@reservas/contracts`, la URL base `NEXT_PUBLIC_API_URL`, un token leído de `localStorage['token']` que se envía como Bearer, y resultados del tipo `{ ok: true, status, data } | { ok: false, status, error: { codigo, mensaje } }`. Además, `frontend/src/lib/formato.ts`, con `horaLocal(iso, zonaHoraria)` → `"19:00"`, que usa `Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: zonaHoraria })` y nunca la zona del navegador (Principio II), y `pesos(valorCop)` → `"$ 80.000"` usando `Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })`
 
 **Checkpoint**: T010 y T011 pasan, `npm run db:migrate && npm run db:seed` funcionan, y la app arranca
 sin endpoints de reserva todavía.
@@ -166,12 +169,12 @@ disponibilidad de C1 muestra 19:00 y 19:30 ocupadas, y la de C2 libres. Sin toke
   - `GET /api/canchas/{C1}/disponibilidad?fecha=...` sin token → 200 conforme a `Disponibilidad`, y ningún bloque trae datos del jugador.
   - `fecha=2026-13-01` → 400.
   - Cancha inexistente → 404.
-- [ ] T030 [P] [US1] Escribir el e2e en `e2e/reservas.spec.ts`, en el grupo `US1`:
-  1. Abrir `/canchas/{C1}?fecha=<sábado>` con un token de prueba en `localStorage`.
+- [ ] T030 [P] [US1] Escribir el e2e en `e2e/reservas.spec.ts`, en el grupo `US1`, con `test.use({ timezoneId: 'Europe/Madrid' })` para demostrar que la página muestra la hora de la sede aunque el navegador esté en otra zona:
+  1. Abrir `/canchas/{C1}?fecha=2026-11-14` con `tokenPara(JUGADOR_A)` en `localStorage` (mediante `page.addInitScript`).
   2. Elegir el bloque 19:00 y 60 minutos, y pulsar "Reservar".
   3. Comprobar que se ve "Pendiente de pago", "Expira a las HH:mm" (hora de la sede) y "$ 80.000".
   4. Comprobar que, al recargar, los bloques 19:00 y 19:30 aparecen como ocupados (AC1, SC-001).
-- [ ] T031 [P] [US1] Escribir el test unitario de `frontend/test/formato.spec.ts`: `horaLocal("2026-11-14T19:00:00.000-05:00")` → `"19:00"`; `pesos(80000)` → `"$ 80.000"` (los espacios del formato pueden ser no separables; compararlos normalizados)
+- [ ] T031 [P] [US1] Escribir el test unitario de `frontend/test/formato.spec.ts`: `horaLocal("2026-11-14T19:00:00.000-05:00", "America/Bogota")` → `"19:00"`; con `TZ=Asia/Tokyo` en el script de test, `horaLocal("2026-11-15T00:00:00Z", "America/Bogota")` → `"19:00"`; `pesos(80000)` → `"$ 80.000"` (los espacios del formato pueden ser no separables; compararlos normalizados)
 
 ### Implementation for User Story 1
 
@@ -272,6 +275,7 @@ devuelve `expirada`, la disponibilidad muestra la franja libre y otro jugador la
   - A los 9:59 el otro jugador recibe `FranjaNoDisponible`.
   - US3-2: `ConfirmarPagoService.confirmar(id)` tras 10 minutos → `ReservaExpirada` y la fila pasa a `expirada`; antes de 10 minutos → `confirmada`, con `confirmada_en` lleno, y después de eso nunca expira.
   - Carrera entre el pago y una reserva nueva: el pago confirma a los 9:59, y una reserva de otro jugador a los 10:00 recibe `FranjaNoDisponible`.
+  - Interbloqueo: con 5 reservas vencidas sin marcar en C1, 10 jugadores piden a la vez una franja que se solapa → ninguna respuesta es un error 500, y hay exactamente 1 éxito.
 - [ ] T055 [P] [US3] Añadir a `backend/test/contract/reservas.contract.spec.ts`: después de avanzar el reloj 10 minutos, `GET /api/reservas/{id}` → 200 con `estado: "expirada"`, conforme al contrato
 - [ ] T056 [P] [US3] Escribir el e2e en `e2e/reservas.spec.ts`, en el grupo `US3`: reservar 19:00, llamar a `POST /api/test/reloj { avanzarMs: 600000 }`, recargar → el bloque 19:00 vuelve a estar libre y un segundo jugador puede reservarlo
 
@@ -279,11 +283,11 @@ devuelve `expirada`, la disponibilidad muestra la franja libre y otro jugador la
 
 - [ ] T057 [US3] En `backend/src/reservas/dominio/reserva.ts`: implementar `confirmarPago(reserva, ahora)`, que devuelve la reserva confirmada o lanza `ReservaExpirada` (hasta que pase T053)
 - [ ] T058 [US3] En `backend/src/reservas/infraestructura/reservas.repository.ts`, añadir:
-  - `materializarExpiradas(cliente, { canchaId, jugadorId, ahora })`: `UPDATE reservas SET estado = 'expirada' WHERE estado = 'pendiente_pago' AND expira_en <= $ahora AND (cancha_id = $canchaId OR jugador_id = $jugadorId)`.
+  - `materializarExpiradas(cliente, { canchaId, jugadorId, ahora })`, que bloquea las filas siempre en el mismo orden para evitar interbloqueos: `WITH vencidas AS (SELECT id FROM reservas WHERE estado = 'pendiente_pago' AND expira_en <= $ahora AND (cancha_id = $canchaId OR jugador_id = $jugadorId) ORDER BY id FOR UPDATE) UPDATE reservas r SET estado = 'expirada' FROM vencidas v WHERE r.id = v.id`.
   - `obtenerParaActualizar(cliente, id)`: `SELECT ... FOR UPDATE`.
   - `guardarEstado(cliente, id, estado, confirmadaEn)`.
 - [ ] T059 [US3] En `backend/src/reservas/aplicacion/crear-reserva.service.ts`: después de `buscarReintento` y antes de `insertar`, llamar a `materializarExpiradas` con `reloj.ahora()` (así las pendientes vencidas dejan de bloquear la restricción de exclusión)
-- [ ] T060 [US3] Implementar `backend/src/reservas/aplicacion/confirmar-pago.service.ts`, que se exporta desde `ReservasModule` para el futuro módulo de pagos (no tiene endpoint HTTP). El método `confirmar(reservaId)` usa `enTransaccion`, luego `obtenerParaActualizar` y `confirmarPago(reserva, reloj.ahora())`, y después `guardarEstado`. Si recibe `ReservaExpirada`, guarda `expirada` antes de volver a lanzar el error (con un `COMMIT` del UPDATE y luego el lanzamiento). Comprobar que pasan T054–T056
+- [ ] T060 [US3] Implementar `backend/src/reservas/aplicacion/confirmar-pago.service.ts`, que se exporta desde `ReservasModule` para el futuro módulo de pagos (no tiene endpoint HTTP). El método `confirmar(reservaId)`, dentro de `enTransaccion`, llama a `obtenerParaActualizar` y a `confirmarPago(reserva, ahora)`. Si la reserva expiró, guarda `expirada` y la transacción **devuelve** `{ resultado: 'expirada' }` sin lanzar ningún error, así que se hace el commit. Si se puede pagar, guarda `confirmada` y devuelve `{ resultado: 'confirmada', reserva }`. **Fuera** de la transacción, si el resultado es `'expirada'`, se lanza `ReservaExpirada`. Comprobar que pasan T054–T056
 - [ ] T061 [US3] En `frontend/src/components/ResultadoReserva.tsx`: si `estado === 'expirada'`, mostrar "La reserva expiró; la franja quedó libre"
 
 **Checkpoint**: las reservas abandonadas ya no bloquean canchas, y la US1 y la US2 siguen pasando.
@@ -327,6 +331,7 @@ y `count(*)` no cambia. 22:00–23:00, 60 y 90 minutos, y exactamente 14 días s
 - [ ] T068 [US4] En `backend/src/reservas/aplicacion/crear-reserva.service.ts`, añadir dos pasos. El flujo completo queda como en la sección "Flujo de `POST /reservas`" de plan.md:
   - `validarFranja` después de `aFranjaUtc` y **antes** de abrir la transacción.
   - Dentro de la transacción, después de `materializarExpiradas`: `contarPendientesVigentes` y `validarLimitePendientes`, antes de `insertar`.
+  - Si la transacción falla con `40P01` (interbloqueo), se reintenta completa una sola vez. Si vuelve a fallar → 409 `FRANJA_NO_DISPONIBLE`.
   - Comprobar que pasan T063 y T064.
 - [ ] T069 [US4] En `frontend/src/app/canchas/[canchaId]/page.tsx` y `SelectorFranja.tsx`: con un 422, mostrar `error.mensaje` en `ResultadoReserva`. El selector de duración solo ofrece múltiplos de 30 desde 60 minutos (el backend sigue siendo la autoridad). Comprobar que pasa T065
 
@@ -383,8 +388,8 @@ Setup ─► Foundational ─► US1 (MVP) ─┬─► US2
 ### Parallel Opportunities
 
 - **Setup**: T002, T003, T006, T007, T008 y T009 en paralelo, después de T001.
-- **Foundational**: los tests T010 y T011 en paralelo. Después, T014, T015, T016, T018, T019 y T020 en
-  paralelo. T017 depende de T016, y T021 de T013, T015 y T019.
+- **Foundational**: los tests T010 y T011 en paralelo. Después, T014, T016, T018, T019 y T020 en
+  paralelo. T015 depende de T019; T017 depende de T016; T021 depende de T013, T015 y T019.
 - **US1**: los 9 tests (T023–T031) en paralelo. Después, T032 y T033 en paralelo, y T037, T038 y T040
   en paralelo cuando T035 esté listo. T042 y T043 también en paralelo.
 - **US2 / US3 / US4**: dentro de cada historia, todos sus tests en paralelo. Si hay más de un
