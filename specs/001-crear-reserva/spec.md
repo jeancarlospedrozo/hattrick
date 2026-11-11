@@ -4,11 +4,11 @@
 
 **Created**: 2026-10-31
 
-**Status**: Draft
+**Status**: Approved
 
 **Input**: User description: "Feature 001: Crear reserva. Como jugador, quiero reservar una cancha en una franja libre para asegurar mi partido sin llamar a la sede."
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Reservar una franja libre (Priority: P1)
 
@@ -124,7 +124,7 @@ ninguna reserva y que el motivo mostrado corresponde a la regla.
 - **Límite de antelación**: una franja que empieza exactamente a 14 días se acepta.
 - **Franjas pasadas**: una franja cuyo inicio ya pasó se rechaza.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -169,7 +169,7 @@ ninguna reserva y que el motivo mostrado corresponde a la regla.
   cancha multiplicada por la duración en horas, guardarlo en la reserva y mostrárselo al jugador. Un
   cambio posterior de tarifa NO DEBE alterar el valor de reservas ya creadas.
 
-### Key Entities *(include if feature involves data)*
+### Key Entities _(include if feature involves data)_
 
 - **Reserva**: ocupación de una cancha por un jugador. Atributos: cancha, jugador, inicio, fin,
   estado (pendiente de pago, confirmada, expirada), valor a pagar, momento de creación y momento de
@@ -179,7 +179,7 @@ ninguna reserva y que el motivo mostrado corresponde a la regla.
 - **Sede**: lugar que agrupa canchas. Atributos: horario de apertura y cierre, y zona horaria.
 - **Jugador**: persona autenticada que crea reservas.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
