@@ -1,0 +1,28 @@
+{
+  "name": "reservas-canchas",
+  "private": true,
+  "workspaces": [
+    "packages/contracts",
+    "backend",
+    "frontend",
+    "e2e"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev -w backend & npm run dev -w frontend & wait",
+    "contracts:generate": "npm run generate -w @reservas/contracts",
+    "contracts:check": "npm run check -w @reservas/contracts",
+    "test:e2e": "npm test -w e2e",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

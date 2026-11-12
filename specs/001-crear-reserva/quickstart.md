@@ -10,7 +10,9 @@ scripts que se definen en las tareas de implementación.
 
 - Node.js 22 LTS y npm 10 o superior
 - Docker con Docker Compose (para PostgreSQL 16)
-- Navegadores de Playwright: `npx playwright install chromium`
+- Navegadores de Playwright: `npx playwright install chromium`. Si Chromium no arranca por falta de
+  librerías del sistema (`libnspr4`, `libnss3`, `libasound2`), instálalas con
+  `sudo npx playwright install-deps chromium`.
 
 ## Puesta en marcha
 
@@ -31,8 +33,9 @@ npm run token:dev -w backend -- <uuid-jugador>   # imprime un JWT de desarrollo
 | --- | --- | --- |
 | `npm run test:unit -w backend` | Reglas de dominio: RN1–RN3, horario, alineación, antelación, estado efectivo, valor, pago expirado | No |
 | `npm run test:integration -w backend` | Restricción de exclusión, concurrencia (AC2, RN3), reintentos, expiración materializada, valor fijo | Sí |
+| `npm test -w frontend` | Formato de hora en la zona de la sede (corre con `TZ=Asia/Tokyo`) y de pesos | No |
 | `npm run test:contract -w backend` | Respuestas validadas contra `openapi.yaml`: códigos 200/201/401/404/409/422 | Sí |
-| `npm run test:e2e` | Recorrido en el navegador: consultar, reservar, ver la expiración y el valor, mensajes de rechazo | Sí (y la app corriendo) |
+| `npm run test:e2e` | Recorrido en el navegador: consultar, reservar, ver la expiración y el valor, mensajes de rechazo | Sí (Playwright levanta backend y frontend con `RELOJ_AJUSTABLE=1`) |
 
 Todos deben pasar antes de dar la feature por terminada.
 
@@ -71,9 +74,22 @@ del seed) y `SABADO`: un sábado dentro de los próximos 14 días.
 8. **Expiración (AC3)**: la cubren los tests de integración y de extremo a extremo con el reloj
    ajustable (`RELOJ_AJUSTABLE=1` solo en el entorno de test). A mano: esperar 10 minutos,
    `GET /api/reservas/{id}` → `estado: "expirada"`, y la franja aparece `libre`.
+9. **Endpoint de test desactivado**: sin `RELOJ_AJUSTABLE=1`, `POST /api/test/reloj` → `404`.
 
 ## Comprobación del Principio I directamente en la base de datos
 
 Inserta con `psql` dos reservas que se solapan, en la misma cancha y en estado `pendiente_pago` o
 `confirmada`, sin pasar por la aplicación. El segundo `INSERT` debe fallar con
 `conflicting key value violates exclusion constraint` (código `23P01`).
+
+## Rendimiento
+
+`npm run carga -w backend` (con el backend corriendo) lanza 500 creaciones y 500 consultas de
+disponibilidad, de 50 en 50 en paralelo, y falla si el p95 llega a 300 ms (plan.md, Performance Goals).
+
+Resultado del 2026-11-11 (un proceso de backend local, PostgreSQL 16 en Docker, WSL2):
+
+| Operación | p50 | p95 | p99 | Estados |
+| --- | --- | --- | --- | --- |
+| `POST /reservas` | 46,5 ms | 184,9 ms | 206,1 ms | 70 × 201, 430 × 409 (choques de franja buscados) |
+| `GET /disponibilidad` | 29,8 ms | 52,6 ms | 67,5 ms | 500 × 200 |

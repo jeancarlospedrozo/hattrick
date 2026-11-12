@@ -250,7 +250,7 @@ components:
     Bloque:
       type: object
       additionalProperties: false
-      required: [inicio, fin, estado]
+      required: [inicio, fin, estado, reservable]
       properties:
         inicio:
           type: string
@@ -261,6 +261,13 @@ components:
         estado:
           type: string
           enum: [libre, ocupada]
+          description: Ocupada si se solapa con una reserva vigente (FR-003, FR-018)
+        reservable:
+          type: boolean
+          description: >-
+            true si el bloque está libre y su inicio es posterior al momento de la consulta y está a
+            14 × 24 h como máximo (FR-012). Es una ayuda para la interfaz; POST /reservas sigue
+            siendo la autoridad.
     Error:
       type: object
       additionalProperties: false

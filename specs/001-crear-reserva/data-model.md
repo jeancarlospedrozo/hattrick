@@ -91,5 +91,6 @@ Para una cancha y una `fecha` local se devuelve:
 - El horario de la sede y su zona horaria.
 - Una lista de bloques de 30 minutos entre la apertura y el cierre, cada uno con su `inicio`, su `fin`
   y su estado (`libre` u `ocupada`). Un bloque está ocupado si se solapa con una reserva vigente de la
-  cancha.
+  cancha. Además, `reservable` es true si el bloque está libre y su inicio es posterior al momento de
+  la consulta y está a 14 × 24 h como máximo (FR-012).
 - No se incluye ningún dato del jugador (FR-018).
