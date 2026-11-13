@@ -225,6 +225,48 @@ nuevo.
 Si la transacción falla con `40P01` (interbloqueo), se reintenta completa una sola vez. Si vuelve a
 fallar → 409. El paso 5 bloquea las filas vencidas en orden de `id` para que el interbloqueo sea raro.
 
+## Revisión posterior a la implementación (T076, 2026-11-11)
+
+Las 6 puertas se revisaron contra el código y se siguen cumpliendo:
+
+- **I. Integridad**: `reservas_sin_solapamiento` en `backend/src/db/migrations/001_reservas.sql`, con
+  tests de SQL directo (`test/integration/esquema.spec.ts`) y de concurrencia (20 rondas de 10
+  solicitudes).
+- **II. Tiempo**: columnas `timestamptz`, rango `'[)'` y respuestas con el desfase de la sede. El
+  frontend formatea con `timeZone` de la sede, y su test corre con `TZ=Asia/Tokyo` y el e2e con el
+  navegador en `Europe/Madrid`.
+- **III. Test-first**: cada criterio de la tabla tiene su test, y todos se vieron fallar antes de
+  implementar. Hay 103 tests en verde: 44 unitarios, 28 de integración, 23 de contrato, 4 del
+  frontend y 4 e2e.
+- **IV. Contratos primero**: los tipos se generan desde `contracts/openapi.yaml`. Los tests de
+  contrato validan cada respuesta con `ajv`, y `contracts:check` detecta tipos desactualizados.
+- **V. Simplicidad**: un solo backend y ninguna dependencia fuera de la tabla de dependencias.
+- **VI. Seguridad y datos personales**: JWT en `POST /reservas`, `GET /reservas/{id}` y
+  `POST /api/test/reloj`. Las reservas solo guardan `jugador_id`, y los logs no registran ni el
+  token ni el jugador.
+
+**Desviaciones respecto al diseño (ninguna incumple la constitución):**
+
+| Diseño | Implementación | Motivo |
+| --- | --- | --- |
+| Reintento por `40P01` en T068 (US4) | Se implementó en la US2 | El test de concurrencia de la US2 encontró interbloqueos reales entre `INSERT` simultáneos contra la restricción de exclusión, incluso sin reservas vencidas. Sin el reintento, algunas solicitudes respondían 500. |
+| `backend/jest.config.ts` | `backend/jest.config.js` | Un archivo `.ts` obliga a instalar `ts-node`, que sería una dependencia más. |
+| `module: NodeNext` en todos los workspaces | `Node16` (salida CommonJS) en backend y e2e, `Bundler` en el frontend | NestJS y Jest trabajan con CommonJS sin extensiones `.js` en los imports. |
+| Inyección por metadatos de decoradores | `@Inject(...)` explícito en todos los constructores | `tsx` (esbuild) no emite `emitDecoratorMetadata`. |
+| Selector de duración hasta el cierre | Siempre ofrece al menos 60 minutos | Así el jugador puede intentar 22:30–23:30 y ver el rechazo con el horario de la sede (AC4); el backend sigue siendo la autoridad. |
+| `.env` con `dotenv` (implícito) | `process.loadEnvFile` de Node | Evita una dependencia (Principio V). |
+| Limpieza e2e solo de `reservas` | `backend/scripts/truncar-test.ts` también restablece las tarifas del seed | Un test de integración de FR-019 cambia la tarifa, y eso contaminaba el e2e. El script solo corre contra bases `*_test`. |
+| Build del backend solo con `tsc` | `tsc` + copia de `src/db/migrations` a `dist/` | Sin la copia, `node dist/db/migrate.js` no encontraba las migraciones. |
+
+**Pendientes conocidos (LOW del análisis), resueltos en la fase Convergence:**
+
+- **I3** (T078): el 401 de `GET /reservas/{id}` ahora dice "Debes iniciar sesión para ver la reserva";
+  el mensaje se fija por endpoint con `@MensajeNoAutenticado`.
+- **U2** (T077): cada bloque de la disponibilidad trae `reservable` (libre, inicio posterior a ahora y a
+  14 × 24 h como máximo), y el selector deshabilita los que no lo son. El backend sigue validando.
+- **T079**: `contracts:check` regenera los tipos en un directorio temporal y los compara, sin depender
+  de que `schema.ts` esté en git.
+
 ## Complexity Tracking
 
 No hay violaciones de la constitución que justificar.

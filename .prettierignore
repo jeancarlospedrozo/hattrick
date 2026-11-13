@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.next/
+coverage/
+test-results/
+playwright-report/
+package-lock.json
+packages/contracts/src/schema.ts
+specs/
+.specify/
+.claude/

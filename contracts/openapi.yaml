@@ -1,0 +1,296 @@
+openapi: 3.1.0
+info:
+  title: Reservas de Canchas — Crear reserva
+  version: 0.1.0
+  description: |
+    Contrato de la feature 001-crear-reserva. Las horas que envía el cliente se interpretan en la zona
+    horaria de la sede. Las respuestas incluyen instantes ISO 8601 con el desfase de la sede
+    (por ejemplo, -05:00) y la zona IANA. Los intervalos son semiabiertos [inicio, fin).
+servers:
+  - url: /api
+security: []
+paths:
+  /reservas:
+    post:
+      operationId: crearReserva
+      summary: Crea una reserva pendiente de pago para el jugador autenticado
+      description: |
+        Si el mismo jugador ya tiene una reserva vigente con la misma cancha, inicio y fin (doble envío
+        o reintento), responde 200 con esa reserva y no crea otra (FR-016).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearReservaRequest'
+            example:
+              canchaId: 7b1e7c62-3f4e-4c8e-9a51-2c1d0f6a9b10
+              fecha: '2026-11-14'
+              horaInicio: '19:00'
+              duracionMinutos: 60
+      responses:
+        '201':
+          description: Reserva creada en estado pendiente_pago
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '200':
+          description: Reintento de una solicitud ya atendida; se devuelve la reserva existente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/CanchaNoEncontrada'
+        '409':
+          description: La franja se solapa con una reserva vigente (FR-006)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                codigo: FRANJA_NO_DISPONIBLE
+                mensaje: Esta franja ya no está disponible
+        '422':
+          description: La solicitud incumple una regla de reserva (FR-009 a FR-014)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRegla'
+              example:
+                codigo: FUERA_DE_HORARIO
+                mensaje: La sede abre de 06:00 a 23:00
+  /reservas/{reservaId}:
+    get:
+      operationId: obtenerReserva
+      summary: Consulta una reserva propia con su estado efectivo
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reservaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reserva del jugador autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          description: No existe o pertenece a otro jugador
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                codigo: RESERVA_NO_ENCONTRADA
+                mensaje: Reserva no encontrada
+  /canchas/{canchaId}/disponibilidad:
+    get:
+      operationId: consultarDisponibilidad
+      summary: Bloques de 30 minutos libres y ocupados de una cancha en un día (FR-018)
+      description: Es pública y no expone datos de los jugadores.
+      parameters:
+        - name: canchaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fecha
+          in: query
+          required: true
+          description: Día local de la sede (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Disponibilidad del día
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Disponibilidad'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '404':
+          $ref: '#/components/responses/CanchaNoEncontrada'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT HS256; el claim `sub` es el id (uuid) del jugador.
+  responses:
+    SolicitudInvalida:
+      description: Cuerpo o parámetros mal formados (no corresponde a una regla de negocio)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: SOLICITUD_INVALIDA
+            mensaje: 'horaInicio debe tener el formato HH:mm'
+    NoAutenticado:
+      description: Falta el token o no es válido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: NO_AUTENTICADO
+            mensaje: Debes iniciar sesión para reservar
+    CanchaNoEncontrada:
+      description: La cancha no existe
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            codigo: CANCHA_NO_ENCONTRADA
+            mensaje: Cancha no encontrada
+  schemas:
+    CrearReservaRequest:
+      type: object
+      additionalProperties: false
+      required: [canchaId, fecha, horaInicio, duracionMinutos]
+      properties:
+        canchaId:
+          type: string
+          format: uuid
+        fecha:
+          type: string
+          format: date
+          description: Día local de la sede
+        horaInicio:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          description: Hora local de la sede (HH:mm)
+        duracionMinutos:
+          type: integer
+          minimum: 1
+          description: Debe ser >= 60 y múltiplo de 30 (se valida como regla, con 422)
+    EstadoReserva:
+      type: string
+      enum: [pendiente_pago, confirmada, expirada]
+    Reserva:
+      type: object
+      additionalProperties: false
+      required: [id, canchaId, inicio, fin, zonaHoraria, estado, valorCop, creadaEn, expiraEn]
+      properties:
+        id:
+          type: string
+          format: uuid
+        canchaId:
+          type: string
+          format: uuid
+        inicio:
+          type: string
+          format: date-time
+          description: ISO 8601 con el desfase de la sede
+        fin:
+          type: string
+          format: date-time
+        zonaHoraria:
+          type: string
+          example: America/Bogota
+        estado:
+          $ref: '#/components/schemas/EstadoReserva'
+        valorCop:
+          type: integer
+          minimum: 0
+          description: Valor a pagar en pesos colombianos, fijado al crear la reserva
+        creadaEn:
+          type: string
+          format: date-time
+        expiraEn:
+          type: string
+          format: date-time
+          description: Momento en que expira si no se paga (creadaEn + 10 min), con el desfase de la sede
+    Disponibilidad:
+      type: object
+      additionalProperties: false
+      required: [canchaId, fecha, zonaHoraria, apertura, cierre, tarifaPorHoraCop, bloques]
+      properties:
+        canchaId:
+          type: string
+          format: uuid
+        fecha:
+          type: string
+          format: date
+        zonaHoraria:
+          type: string
+        apertura:
+          type: string
+          example: '06:00'
+        cierre:
+          type: string
+          example: '23:00'
+        tarifaPorHoraCop:
+          type: integer
+          minimum: 1
+        bloques:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bloque'
+    Bloque:
+      type: object
+      additionalProperties: false
+      required: [inicio, fin, estado, reservable]
+      properties:
+        inicio:
+          type: string
+          format: date-time
+        fin:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum: [libre, ocupada]
+          description: Ocupada si se solapa con una reserva vigente (FR-003, FR-018)
+        reservable:
+          type: boolean
+          description: >-
+            true si el bloque está libre y su inicio es posterior al momento de la consulta y está a
+            14 × 24 h como máximo (FR-012). Es una ayuda para la interfaz; POST /reservas sigue
+            siendo la autoridad.
+    Error:
+      type: object
+      additionalProperties: false
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+        mensaje:
+          type: string
+          description: Texto en español para mostrar al jugador
+    ErrorRegla:
+      type: object
+      additionalProperties: false
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+          enum:
+            - DURACION_INVALIDA
+            - INICIO_NO_ALINEADO
+            - FUERA_DE_HORARIO
+            - FRANJA_PASADA
+            - ANTELACION_EXCEDIDA
+            - LIMITE_PENDIENTES
+        mensaje:
+          type: string
